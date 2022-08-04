@@ -4,22 +4,175 @@ output:
   html_document:
     keep_md: true
 ---
-
+## Loading the needed library
+```{r}
+library(tidyverse)
+library(lubridate)
+library(knitr)
+```
 
 ## Loading and preprocessing the data
-
-
+1. Load and assign the file to activity. If the file already existed, the code would not run.
+```{r}
+if(!file.exists('activity.csv')){
+  unzip(activity.zip)
+}
+activity <- read.csv('activity.csv')
+```
+2. Investigate the data
+Data contains `r nrow(activity)` observations and `r ncol(activity)` variables. The variables includes steps, date and interval (Details are mentioned in [README.md](https://github.com/EdwardTran121/RepData_PeerAssessment1/blob/master/README.md) file).
+```{r}
+dim(activity)
+```
+The output below shows a glance of the activity data.
+```{r}
+head(activity)
+```
+There are some NAs in steps. Filter the NAs into filterd_activity. The number of remained observations is `r nrow(filtered_activity)`. Date is also changed format to date.
+```{r}
+filtered_activity <- activity %>% 
+  filter(!is.na(steps)) %>% 
+  mutate(date = as.Date(date))
+```
+Take a look at filtered_activity.
+```{r}
+head(filtered_activity)
+```
+```{r}
+dim(filtered_activity)
+```
 
 ## What is mean total number of steps taken per day?
+Group the data by date and assign it to day_activity.
+```{r}
+day_activity <- filtered_activity %>% 
+  group_by(date) %>% 
+  summarise(steps_per_day = sum(steps)) 
+head(day_activity)
+```
+There are `r nrow(day_activity)` days in data.
+```{r}
+dim(day_activity)
+```
 
+1. The histogram of for number of steps per day is shown below. The distribution of the data seems to be normal distribution.
+```{r plot1}
+ggplot(day_activity, aes(steps_per_day)) +
+  geom_histogram() +
+  labs(title = "Distribution of Steps per Day") +
+  xlab("Steps per day") +
+  ylab('Number of day') +
+  theme_bw()
+```
 
+2. The average steps per day is `r mean(day_activity$steps_per_day)` and median is `r median(day_activity$steps_per_day)`, which are summarized below.
+```{r}
+summary(day_activity$steps_per_day)
+```
 
 ## What is the average daily activity pattern?
-
+Group the data by interval per day and remove NA
+```{r}
+interval_activity <- filtered_activity %>% 
+  group_by(interval) %>% 
+  summarise(steps_per_interval = mean(steps)) 
+head(interval_activity)
+```
+1. The time series plot (i.e. `type = "l"`) of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis) is shown below.
+```{r plot2}
+ggplot(interval_activity, aes(interval, steps_per_interval)) +
+  geom_line() +
+  labs(title = "Average number of steps taken acroos all days") +
+  xlab("5-minute interval") +
+  ylab('Average number of steps') +
+  theme_bw()
+```
+2. On average across all the days in the data set, the 5-minute interval contains the maximum number of steps is `r interval_activity$interval[interval_activity$steps_per_interval==max(interval_activity$steps_per_interval)]`
+```{r}
+interval_activity %>% 
+  arrange(desc(steps_per_interval)) %>% 
+  head()
+```
 
 
 ## Imputing missing values
+1. The total number of missing values in the dataset is `r nrow(filter(activity, is.na(steps)))`
+```{r}
+sapply(activity, function(x) sum(is.na(x)))
+```
+Investigate the missing value data.
+```{r}
+activity %>% 
+  filter(is.na(steps)) %>% 
+  summarise_each(funs(year = year, month = month), date) %>% 
+  table()
+```
 
+2. Using imputing mean to assign mean of the same interval the the missing value.
+```{r}
+imputed_activity <- activity %>% 
+  mutate(date = as.Date(date))
+for (i in 1:nrow(activity)){
+  imputed_activity[i,1][is.na(imputed_activity[i,1])] <- 
+    interval_activity$steps_per_interval[interval_activity$interval == imputed_activity[i,3]]
+}
+head(imputed_activity)
+```
+3. Check the NA in the imputed variable
+```{r}
+sapply(imputed_activity, function(x) sum(is.na(x)))
+```
+4. Make a histogram of the total number of steps taken each day and Calculate and report the **mean** and **median** total number of steps taken per day. The **mean** is not changed while **median** is changed that equal to **mean** from the estimates from the first part of the assignment.
+Calculate steps taken each day
+```{r}
+day_imputed_activity <- imputed_activity %>% 
+  group_by(date) %>% 
+  summarise(steps_per_day = sum(steps)) 
+head(day_imputed_activity)
+```
+Histogram of total number of steps taken each day in filled NAs data set.
+```{r plot3}
+ggplot(day_imputed_activity, aes(steps_per_day)) +
+  geom_histogram() +
+  labs(title = "Distribution of Steps per Day (Filled NAs)") +
+  xlab("Steps per day") +
+  ylab('Number of day') +
+  theme_bw()
+```
+The **mean** and **median** of steps taken per day are `r mean(day_imputed_activity$steps_per_day)` and `r median(day_imputed_activity$steps_per_day)`, respectively.
+```{r}
+summary(day_imputed_activity$steps_per_day)
+```
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+1. Create a new factor variable in the dataset with two levels -- "weekday" and "weekend" indicating whether a given date is a weekday or weekend day. **The used data is not-filled NAs**
+```{r}
+week_activity <- activity %>% 
+  mutate(week = ifelse(weekdays(as.Date(date)) %in% c('Saturday', 'Sunday'), 'weekend', 'weekday'))
+head(week_activity)
+```
+2. Make a panel plot containing a time series plot (i.e. `type = "l"`) of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis).
+Make variable for internal steps.
+```{r}
+week_interval_activity <- week_activity %>% 
+  group_by(interval, week) %>% 
+  summarise(steps_per_interval = mean(steps, na.rm = TRUE)) 
+head(week_interval_activity)
+```
+
+```{r plot4}
+ggplot(week_interval_activity, aes(x = interval, y = steps_per_interval)) +
+  geom_line() +
+  facet_grid(rows = vars(week)) +
+  labs(title = "Average number of steps taken across all days by weekdays") +
+  xlab("5-minute interval") +
+  ylab('Average number of steps') +
+  theme_bw()
+```
+
+knit the file
+```{r}
+knit2html('PA1_template.Rmd','PA1_template.html')
+```
+
